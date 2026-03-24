@@ -9,7 +9,6 @@ function isTradingDay(dt) {
   const weekday = dt.weekday; // 1=Mon … 7=Sun
   if (weekday === 6 || weekday === 7) return false;
 
-  // Exact NYSE holidays 2025–2027 (full closures)
   const ymd = `${dt.year}-${String(dt.month).padStart(2, '0')}-${String(dt.day).padStart(2, '0')}`;
   const holidays = new Set([
     // 2025
@@ -30,7 +29,6 @@ function getLastAndNextMarketEvent(tweetISO) {
 
   let lastEvent, nextEvent, lastLabel, nextLabel;
 
-  // Find previous trading day if needed
   const findPrevTradingDay = (d) => {
     let prev = d.minus({ days: 1 });
     while (!isTradingDay(prev)) prev = prev.minus({ days: 1 });
@@ -46,7 +44,6 @@ function getLastAndNextMarketEvent(tweetISO) {
   const todayClose = t.startOf('day').set({ hour: CLOSE_HOUR, minute: CLOSE_MIN });
 
   if (!isTradingDay(t)) {
-    // Weekend / holiday
     lastEvent = findPrevTradingDay(t).set({ hour: CLOSE_HOUR, minute: CLOSE_MIN });
     lastLabel = 'Close';
     nextEvent = findNextTradingDay(t).set({ hour: OPEN_HOUR, minute: OPEN_MIN });
@@ -72,18 +69,27 @@ function getLastAndNextMarketEvent(tweetISO) {
   const deltaNext = nextEvent.diff(t, ['hours', 'minutes']).toObject();
 
   const formatDelta = (delta) => {
-    const h = Math.floor(delta.hours);
-    const m = Math.round(delta.minutes);
+    const h = Math.floor(delta.hours || 0);
+    const m = Math.round(delta.minutes || 0);
     return `${h > 0 ? h + 'h ' : ''}${m}m`;
   };
 
   return {
-    last: { label: lastLabel, time: lastEvent.toFormat('MMM d HH:mm'), delta: formatDelta(deltaLast) + ' ago' },
-    next: { label: nextLabel, time: nextEvent.toFormat('MMM d HH:mm'), delta: 'in ' + formatDelta(deltaNext) }
+    last: { 
+      label: lastLabel, 
+      time: lastEvent.toFormat('MMM d HH:mm'), 
+      delta: formatDelta(deltaLast) + ' ago' 
+    },
+    next: { 
+      label: nextLabel, 
+      time: nextEvent.toFormat('MMM d HH:mm'), 
+      delta: 'in ' + formatDelta(deltaNext) 
+    }
   };
 }
 
 function createModal(info) {
+  // Remove any existing modal first
   const existing = document.getElementById('nyse-delta-modal');
   if (existing) existing.remove();
 
@@ -96,10 +102,11 @@ function createModal(info) {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     border: 1px solid #e5e5e5; line-height: 1.4;
   `;
+
   modal.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <h3 style="margin:0;font-size:18px;">NYSE Market Timing</h3>
-      <button onclick="this.closest('#nyse-delta-modal').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#666;">×</button>
+      <button id="nyse-close-btn" style="background:none;border:none;font-size:24px;cursor:pointer;color:#666;padding:0;width:30px;height:30px;display:flex;align-items:center;justify-content:center;">×</button>
     </div>
     <div style="margin-bottom:16px;">
       <strong>Last ${info.last.label}:</strong> ${info.last.time}<br>
@@ -113,15 +120,32 @@ function createModal(info) {
       Powered by NYSE hours (9:30–16:00 ET)
     </div>
   `;
+
   document.body.appendChild(modal);
 
-  // Click outside or Escape to close
-  const closeOnClick = (e) => {
-    if (e.target === modal) modal.remove();
+  // Fix: Proper event listener for the X button
+  const closeBtn = document.getElementById('nyse-close-btn');
+  closeBtn.addEventListener('click', () => {
+    modal.remove();
+  });
+
+  // Close when clicking outside the modal
+  const closeOnOutsideClick = (e) => {
+    if (e.target === modal) {
+      modal.remove();
+      document.removeEventListener('click', closeOnOutsideClick);
+    }
   };
-  const closeOnEsc = (e) => { if (e.key === 'Escape') modal.remove(); };
-  document.addEventListener('click', closeOnClick, { once: true });
-  document.addEventListener('keydown', closeOnEsc, { once: true });
+  document.addEventListener('click', closeOnOutsideClick);
+
+  // Close with Escape key
+  const closeOnEsc = (e) => {
+    if (e.key === 'Escape') {
+      modal.remove();
+      document.removeEventListener('keydown', closeOnEsc);
+    }
+  };
+  document.addEventListener('keydown', closeOnEsc);
 }
 
 function injectButtons() {
@@ -130,6 +154,7 @@ function injectButtons() {
 
     const timeEl = tweet.querySelector('time');
     if (!timeEl) return;
+
     const datetime = timeEl.getAttribute('datetime');
     if (!datetime) return;
 
@@ -141,14 +166,14 @@ function injectButtons() {
       border-radius: 9999px; padding: 2px 9px; font-size: 13px; cursor: pointer;
       font-weight: 600; line-height: 1;
     `;
-    btn.addEventListener('click', e => {
+
+    btn.addEventListener('click', (e) => {
       e.stopImmediatePropagation();
       e.preventDefault();
       const info = getLastAndNextMarketEvent(datetime);
       createModal(info);
     });
 
-    // Place button right after the timestamp
     const container = timeEl.parentElement;
     if (container) {
       container.style.display = 'flex';
@@ -158,13 +183,14 @@ function injectButtons() {
   });
 }
 
-// Run on load + watch for new tweets (X is very dynamic)
+// Observer for dynamically loaded tweets
 const observer = new MutationObserver(injectButtons);
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
+// Initial injection
 window.addEventListener('load', () => {
-  setTimeout(injectButtons, 1000);
-  setTimeout(injectButtons, 3000);
+  setTimeout(injectButtons, 800);
+  setTimeout(injectButtons, 2500);
 });
 
 console.log('%c✅ NYSE Tweet Delta loaded – click the 📈 button on any tweet', 'color:#1d9bf0;font-weight:bold');
