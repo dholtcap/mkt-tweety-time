@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "NYSE Tweet Delta",
+  "version": "1.0",
+  "description": "Click the 📈 button on any tweet to see deltas to the most recent & next NYSE open/close",
+  "permissions": [],
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["luxon.min.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
